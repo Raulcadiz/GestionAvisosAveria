@@ -11,6 +11,11 @@
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <span class="fw-bold">{{ aviso.nombre_cliente }}</span>
           <span class="badge {{ badge_class }}">{{ aviso.estado_label() }}</span>
+          {% if aviso.cobro_estado == 'moroso' %}
+            <span class="badge bg-danger">⚠️ Moroso</span>
+          {% elif aviso.cobro_estado == 'pagado' %}
+            <span class="badge bg-success">✓ Pagado</span>
+          {% endif %}
           {% if aviso.photos %}
             <span class="badge bg-secondary">📷 {{ aviso.photos|length }}</span>
           {% endif %}

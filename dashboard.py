@@ -1,11 +1,21 @@
 import os
 from datetime import date, timedelta
 from flask import Blueprint, render_template, request, jsonify, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
+from extensions import db
 from models import Aviso
 from telegram_bot import diagnosticar, enviar_mensaje, notificar_resumen_dia, notificar_material_pendiente
 
 dashboard_bp = Blueprint('dashboard', __name__)
+
+
+def _base_query():
+    """Query base filtrada por rol del usuario actual."""
+    q = Aviso.query
+    if not current_user.es_admin:
+        q = q.filter(db.or_(Aviso.asignado_a == current_user.id,
+                             Aviso.created_by == current_user.id))
+    return q
 
 
 @dashboard_bp.route('/')
@@ -13,29 +23,30 @@ dashboard_bp = Blueprint('dashboard', __name__)
 def index():
     hoy = date.today()
     proximos_dias = hoy + timedelta(days=7)
+    bq = _base_query()
 
     contadores = {
-        'hoy': Aviso.query.filter(
+        'hoy': bq.filter(
             Aviso.fecha_cita == hoy,
             Aviso.estado != 'finalizado'
         ).count(),
-        'material': Aviso.query.filter_by(estado='esperando_material').count(),
-        'pendientes': Aviso.query.filter_by(estado='pendiente').count(),
-        'proximas': Aviso.query.filter(
+        'material': bq.filter(Aviso.estado == 'esperando_material').count(),
+        'pendientes': bq.filter(Aviso.estado == 'pendiente').count(),
+        'proximas': bq.filter(
             Aviso.fecha_cita > hoy,
             Aviso.fecha_cita <= proximos_dias,
             Aviso.estado != 'finalizado'
         ).count(),
-        'segunda_visita': Aviso.query.filter_by(estado='segunda_visita').count(),
-        'total': Aviso.query.filter(Aviso.estado != 'finalizado').count(),
+        'segunda_visita': bq.filter(Aviso.estado == 'segunda_visita').count(),
+        'total': bq.filter(Aviso.estado != 'finalizado').count(),
     }
 
-    avisos_hoy = Aviso.query.filter(
+    avisos_hoy = _base_query().filter(
         Aviso.fecha_cita == hoy,
         Aviso.estado != 'finalizado'
     ).order_by(Aviso.fecha_cita).all()
 
-    avisos_pendientes = Aviso.query.filter(
+    avisos_pendientes = _base_query().filter(
         Aviso.estado.in_(['pendiente', 'segunda_visita'])
     ).order_by(Aviso.fecha_aviso.desc()).limit(5).all()
 
@@ -50,7 +61,7 @@ def index():
 @login_required
 def hoy():
     hoy_date = date.today()
-    avisos = Aviso.query.filter(
+    avisos = _base_query().filter(
         Aviso.fecha_cita == hoy_date,
         Aviso.estado != 'finalizado'
     ).order_by(Aviso.nombre_cliente).all()
@@ -65,7 +76,7 @@ def hoy():
 @login_required
 def modo_ruta():
     hoy_date = date.today()
-    avisos = Aviso.query.filter(
+    avisos = _base_query().filter(
         Aviso.fecha_cita == hoy_date,
         Aviso.estado != 'finalizado'
     ).order_by(Aviso.calle).all()
@@ -77,8 +88,8 @@ def modo_ruta():
 @dashboard_bp.route('/dashboard/material')
 @login_required
 def material():
-    avisos = Aviso.query.filter_by(
-        estado='esperando_material'
+    avisos = _base_query().filter(
+        Aviso.estado == 'esperando_material'
     ).order_by(Aviso.fecha_aviso.desc()).all()
     return render_template('dashboard/lista_filtrada.html',
                            avisos=avisos,
@@ -92,7 +103,7 @@ def material():
 def proximas():
     hoy_date = date.today()
     proximos_dias = hoy_date + timedelta(days=7)
-    avisos = Aviso.query.filter(
+    avisos = _base_query().filter(
         Aviso.fecha_cita > hoy_date,
         Aviso.fecha_cita <= proximos_dias,
         Aviso.estado != 'finalizado'
@@ -107,8 +118,8 @@ def proximas():
 @dashboard_bp.route('/dashboard/finalizados')
 @login_required
 def finalizados():
-    avisos = Aviso.query.filter_by(
-        estado='finalizado'
+    avisos = _base_query().filter(
+        Aviso.estado == 'finalizado'
     ).order_by(Aviso.updated_at.desc()).limit(100).all()
     return render_template('dashboard/lista_filtrada.html',
                            avisos=avisos,
@@ -135,7 +146,7 @@ def telegram_test():
 @login_required
 def telegram_resumen():
     hoy_date = date.today()
-    avisos = Aviso.query.filter(
+    avisos = _base_query().filter(
         Aviso.fecha_cita == hoy_date,
         Aviso.estado != 'finalizado'
     ).order_by(Aviso.calle).all()
@@ -146,7 +157,9 @@ def telegram_resumen():
 @dashboard_bp.route('/dashboard/telegram/material', methods=['POST'])
 @login_required
 def telegram_material():
-    avisos = Aviso.query.filter_by(estado='esperando_material').order_by(Aviso.updated_at).all()
+    avisos = _base_query().filter(
+        Aviso.estado == 'esperando_material'
+    ).order_by(Aviso.updated_at).all()
     ok = notificar_material_pendiente(avisos)
     return jsonify({'ok': ok, 'total': len(avisos)})
 

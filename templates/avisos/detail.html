@@ -95,7 +95,10 @@
     <!-- Datos económicos -->
     {% if aviso.tiene_datos_economicos %}
     <div class="card shadow-sm border-0 mb-3 border-start border-4 border-success">
-      <div class="card-header fw-semibold bg-success text-white">💶 Datos Económicos</div>
+      <div class="card-header fw-semibold bg-success text-white d-flex justify-content-between align-items-center">
+        <span>💶 Datos Económicos</span>
+        <span class="badge {{ aviso.cobro_badge_class() }}">{{ aviso.cobro_label() }}</span>
+      </div>
       <div class="card-body">
         <div class="row g-3">
           {% if aviso.precio_mano_obra is not none %}
@@ -104,18 +107,31 @@
             <div class="fw-semibold fs-5">{{ '%.2f'|format(aviso.precio_mano_obra) }} €</div>
           </div>
           {% endif %}
-          {% if aviso.coste_materiales is not none %}
+          {% if aviso.gastos_extra is not none %}
           <div class="col-6 col-md-3">
-            <div class="text-muted small">Coste materiales</div>
-            <div class="fw-semibold fs-5">{{ '%.2f'|format(aviso.coste_materiales) }} €</div>
+            <div class="text-muted small">Gastos extra</div>
+            <div class="fw-semibold fs-5">{{ '%.2f'|format(aviso.gastos_extra) }} €</div>
+            {% if aviso.gastos_extra_desc %}
+              <div class="small text-muted">{{ aviso.gastos_extra_desc }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% if aviso.descuento is not none and aviso.descuento > 0 %}
+          <div class="col-6 col-md-3">
+            <div class="text-muted small">Descuento</div>
+            <div class="fw-semibold fs-5 text-warning">-{{ '%.2f'|format(aviso.descuento) }} €</div>
           </div>
           {% endif %}
           <div class="col-6 col-md-3">
-            <div class="text-muted small">Total facturado</div>
-            <div class="fw-bold fs-5 text-primary">
-              {{ '%.2f'|format((aviso.precio_mano_obra or 0) + (aviso.coste_materiales or 0)) }} €
-            </div>
+            <div class="text-muted small">Total cliente</div>
+            <div class="fw-bold fs-5 text-primary">{{ '%.2f'|format(aviso.total_cliente) }} €</div>
           </div>
+          {% if aviso.coste_materiales is not none %}
+          <div class="col-6 col-md-3">
+            <div class="text-muted small">Coste materiales</div>
+            <div class="fw-semibold">{{ '%.2f'|format(aviso.coste_materiales) }} €</div>
+          </div>
+          {% endif %}
           <div class="col-6 col-md-3">
             <div class="text-muted small">Beneficio neto</div>
             <div class="fw-bold fs-5 {{ 'text-success' if aviso.beneficio >= 0 else 'text-danger' }}">
@@ -183,6 +199,21 @@
           </select>
           <div id="estado-feedback" class="small mt-1"></div>
         </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-header fw-semibold">👤 Técnico</div>
+      <div class="card-body small">
+        {% if aviso.tecnico %}
+          <div class="fw-semibold">{{ aviso.tecnico.display_name }}</div>
+          <div class="text-muted">@{{ aviso.tecnico.username }}</div>
+          {% if aviso.tecnico.telefono_perfil %}
+            <a href="tel:{{ aviso.tecnico.telefono_perfil }}" class="text-success">📞 {{ aviso.tecnico.telefono_perfil }}</a>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">— Sin asignar</span>
+        {% endif %}
       </div>
     </div>
 

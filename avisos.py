@@ -9,7 +9,7 @@ from flask_login import login_required, current_user
 from PIL import Image
 
 from extensions import db
-from models import Aviso, Photo, ESTADOS, ELECTRODOMESTICOS
+from models import Aviso, Photo, ESTADOS, ELECTRODOMESTICOS, COBRO_ESTADOS, User
 from telegram_bot import notificar_aviso_nuevo, notificar_cambio_estado
 
 avisos_bp = Blueprint('avisos', __name__, url_prefix='/avisos')
@@ -66,6 +66,12 @@ def list_all():
     page = request.args.get('page', 1, type=int)
 
     query = Aviso.query
+    # Técnicos solo ven sus avisos
+    if not current_user.es_admin:
+        query = query.filter(
+            db.or_(Aviso.asignado_a == current_user.id,
+                   Aviso.created_by == current_user.id)
+        )
 
     if q:
         like = f'%{q}%'
@@ -88,7 +94,8 @@ def list_all():
                            avisos=avisos,
                            q=q,
                            estado_filter=estado_filter,
-                           estados=ESTADOS)
+                           estados=ESTADOS,
+                           cobro_estados=COBRO_ESTADOS)
 
 
 # ── API búsqueda JSON ──────────────────────────────────────────────────────
@@ -160,6 +167,11 @@ def create():
             precio_mano_obra=_float_or_none(request.form.get('precio_mano_obra', '')),
             coste_materiales=_float_or_none(request.form.get('coste_materiales', '')),
             materiales_desc=request.form.get('materiales_desc', '').strip() or None,
+            descuento=_float_or_none(request.form.get('descuento', '')),
+            gastos_extra=_float_or_none(request.form.get('gastos_extra', '')),
+            gastos_extra_desc=request.form.get('gastos_extra_desc', '').strip() or None,
+            cobro_estado=request.form.get('cobro_estado', 'pendiente'),
+            asignado_a=request.form.get('asignado_a', type=int) or None,
         )
 
         fecha_aviso_str = request.form.get('fecha_aviso', '')
@@ -173,10 +185,13 @@ def create():
 
         if not aviso.nombre_cliente or not aviso.telefono:
             flash('El nombre del cliente y el teléfono son obligatorios.', 'danger')
+            tecnicos = User.query.filter_by(is_active=True).all()
             return render_template('avisos/form.html',
                                    aviso=None,
                                    estados=ESTADOS,
-                                   electrodomesticos=ELECTRODOMESTICOS)
+                                   cobro_estados=COBRO_ESTADOS,
+                                   electrodomesticos=ELECTRODOMESTICOS,
+                                   tecnicos=tecnicos)
 
         db.session.add(aviso)
         db.session.flush()  # Para obtener el ID antes de guardar fotos
@@ -199,10 +214,13 @@ def create():
         flash(f'Aviso #{aviso.id} creado correctamente.', 'success')
         return redirect(url_for('avisos.detail', id=aviso.id))
 
+    tecnicos = User.query.filter_by(is_active=True).all()
     return render_template('avisos/form.html',
                            aviso=None,
                            estados=ESTADOS,
-                           electrodomesticos=ELECTRODOMESTICOS)
+                           cobro_estados=COBRO_ESTADOS,
+                           electrodomesticos=ELECTRODOMESTICOS,
+                           tecnicos=tecnicos)
 
 
 # ── Editar ─────────────────────────────────────────────────────────────────
@@ -229,9 +247,15 @@ def edit(id):
             except (ValueError, AttributeError):
                 return None
 
-        aviso.precio_mano_obra = _float_or_none(request.form.get('precio_mano_obra', ''))
-        aviso.coste_materiales = _float_or_none(request.form.get('coste_materiales', ''))
-        aviso.materiales_desc  = request.form.get('materiales_desc', '').strip() or None
+        aviso.precio_mano_obra  = _float_or_none(request.form.get('precio_mano_obra', ''))
+        aviso.coste_materiales  = _float_or_none(request.form.get('coste_materiales', ''))
+        aviso.materiales_desc   = request.form.get('materiales_desc', '').strip() or None
+        aviso.descuento         = _float_or_none(request.form.get('descuento', ''))
+        aviso.gastos_extra      = _float_or_none(request.form.get('gastos_extra', ''))
+        aviso.gastos_extra_desc = request.form.get('gastos_extra_desc', '').strip() or None
+        aviso.cobro_estado      = request.form.get('cobro_estado', aviso.cobro_estado)
+        asignado_raw = request.form.get('asignado_a', '')
+        aviso.asignado_a = int(asignado_raw) if asignado_raw.isdigit() else None
 
         fecha_aviso_str = request.form.get('fecha_aviso', '')
         fecha_cita_str = request.form.get('fecha_cita', '')
@@ -246,10 +270,13 @@ def edit(id):
 
         if not aviso.nombre_cliente or not aviso.telefono:
             flash('El nombre del cliente y el teléfono son obligatorios.', 'danger')
+            tecnicos = User.query.filter_by(is_active=True).all()
             return render_template('avisos/form.html',
                                    aviso=aviso,
                                    estados=ESTADOS,
-                                   electrodomesticos=ELECTRODOMESTICOS)
+                                   cobro_estados=COBRO_ESTADOS,
+                                   electrodomesticos=ELECTRODOMESTICOS,
+                                   tecnicos=tecnicos)
 
         # Nuevas fotos
         files = request.files.getlist('photos')
@@ -268,10 +295,13 @@ def edit(id):
         flash('Aviso actualizado correctamente.', 'success')
         return redirect(url_for('avisos.detail', id=aviso.id))
 
+    tecnicos = User.query.filter_by(is_active=True).all()
     return render_template('avisos/form.html',
                            aviso=aviso,
                            estados=ESTADOS,
-                           electrodomesticos=ELECTRODOMESTICOS)
+                           cobro_estados=COBRO_ESTADOS,
+                           electrodomesticos=ELECTRODOMESTICOS,
+                           tecnicos=tecnicos)
 
 
 # ── Cambiar estado (AJAX) ──────────────────────────────────────────────────

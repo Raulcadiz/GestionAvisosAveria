@@ -4,13 +4,14 @@ Comandos disponibles:
   /hoy          — citas de hoy
   /pendientes   — avisos pendientes
   /material     — esperando material
+  /morosos      — clientes morosos
   /buscar TEXTO — busca por nombre, teléfono o calle
   /aviso NUM    — detalle de un aviso por ID
   /stats        — estadísticas del día
   /ayuda        — lista de comandos
 """
 from datetime import date
-from telegram_bot import enviar_mensaje
+from telegram_bot import enviar_mensaje, enviar_mensaje_a
 
 
 def _fmt_aviso(av, idx=None):
@@ -80,6 +81,28 @@ def _cmd_material(app):
             dias = (date.today() - av.updated_at.date()).days if av.updated_at else '?'
             lineas.append(_fmt_aviso(av))
             lineas.append(f'   ⏱ {dias} día(s) esperando')
+            lineas.append('')
+        return enviar_mensaje('\n'.join(lineas))
+
+
+def _cmd_morosos(app):
+    with app.app_context():
+        from models import Aviso
+        avisos = Aviso.query.filter_by(
+            cobro_estado='moroso'
+        ).order_by(Aviso.updated_at.desc()).all()
+
+        if not avisos:
+            return enviar_mensaje('💰 <b>Morosos</b>\n\n✅ Sin clientes morosos.')
+
+        total = sum(av.total_cliente for av in avisos)
+        lineas = [f'⚠️ <b>Morosos ({len(avisos)}) — {total:.2f} € pendientes</b>', '']
+        for av in avisos:
+            lineas.append(f'<b>{av.nombre_cliente}</b>  <code>#{av.id}</code>')
+            lineas.append(f'   📞 {av.telefono}')
+            lineas.append(f'   💶 {av.total_cliente:.2f} €')
+            if av.electrodomestico:
+                lineas.append(f'   🔧 {av.electrodomestico}')
             lineas.append('')
         return enviar_mensaje('\n'.join(lineas))
 
@@ -206,6 +229,7 @@ def _cmd_ayuda():
         '/hoy — Citas de hoy con dirección\n'
         '/pendientes — Avisos sin asignar\n'
         '/material — Esperando piezas\n'
+        '/morosos — Clientes morosos\n'
         '/buscar <i>texto</i> — Busca por nombre/tel/calle\n'
         '/aviso <i>número</i> — Detalle completo de un aviso\n'
         '/stats — Resumen y facturación del mes\n'
@@ -239,6 +263,8 @@ def procesar_update(update: dict, app) -> bool:
         _cmd_pendientes(app)
     elif comando == '/material':
         _cmd_material(app)
+    elif comando == '/morosos':
+        _cmd_morosos(app)
     elif comando == '/buscar':
         _cmd_buscar(app, args)
     elif comando == '/aviso':

@@ -40,8 +40,16 @@
           <a class="nav-link" href="{{ url_for('avisos.list_all') }}">📂 Todos</a>
         </li>
         <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('estadisticas.index') }}">📊 Estadísticas</a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link" href="{{ url_for('dashboard.telegram_ajustes') }}">📲 Telegram</a>
         </li>
+        {% if current_user.es_admin %}
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('admin.index') }}">👥 Admin</a>
+        </li>
+        {% endif %}
       </ul>
       <!-- Búsqueda rápida en navbar -->
       <div class="d-flex me-2 position-relative" style="min-width:220px">

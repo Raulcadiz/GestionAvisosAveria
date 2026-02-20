@@ -139,23 +139,74 @@
       </div>
     </div>
 
-    <!-- Datos económicos (solo si está finalizado o ya tiene datos) -->
-    {% if (aviso and aviso.estado == 'finalizado') or (aviso and aviso.tiene_datos_economicos) or not aviso %}
+    <!-- Asignación de técnico (solo admin) -->
+    {% if current_user.es_admin %}
+    <div class="col-12">
+      <div class="card shadow-sm border-0">
+        <div class="card-header fw-semibold bg-dark text-white">👤 Asignación</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label">Técnico asignado</label>
+              <select name="asignado_a" class="form-select">
+                <option value="">— Sin asignar —</option>
+                {% for t in tecnicos %}
+                  <option value="{{ t.id }}"
+                    {% if aviso and aviso.asignado_a == t.id %}selected{% endif %}>
+                    {{ t.display_name }} (@{{ t.username }})
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Datos económicos -->
     <div class="col-12">
       <div class="card shadow-sm border-0 border-start border-4 border-success">
         <div class="card-header fw-semibold bg-success text-white">💶 Datos Económicos</div>
         <div class="card-body">
           <div class="row g-3">
-            <div class="col-12 col-md-4">
-              <label class="form-label">Precio mano de obra (€)</label>
-              <input type="number" name="precio_mano_obra" class="form-control"
+            <div class="col-12 col-md-3">
+              <label class="form-label">Mano de obra (€)</label>
+              <input type="number" name="precio_mano_obra" class="form-control econ-field"
                      step="0.01" min="0"
                      value="{{ '%.2f'|format(aviso.precio_mano_obra) if aviso and aviso.precio_mano_obra is not none else '' }}"
                      placeholder="0.00">
             </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Gastos extra (€)</label>
+              <input type="number" name="gastos_extra" class="form-control econ-field"
+                     step="0.01" min="0"
+                     value="{{ '%.2f'|format(aviso.gastos_extra) if aviso and aviso.gastos_extra is not none else '' }}"
+                     placeholder="0.00">
+              <input type="text" name="gastos_extra_desc" class="form-control mt-1"
+                     value="{{ aviso.gastos_extra_desc or '' if aviso else '' }}"
+                     placeholder="Ej: Desplazamiento urgente">
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Descuento (€)</label>
+              <input type="number" name="descuento" class="form-control econ-field"
+                     step="0.01" min="0"
+                     value="{{ '%.2f'|format(aviso.descuento) if aviso and aviso.descuento is not none else '' }}"
+                     placeholder="0.00">
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Total cliente</label>
+              <div class="form-control bg-light fw-bold text-primary" id="total-preview">
+                {% if aviso and aviso.tiene_datos_economicos %}
+                  {{ '%.2f'|format(aviso.total_cliente) }} €
+                {% else %}
+                  — €
+                {% endif %}
+              </div>
+            </div>
             <div class="col-12 col-md-4">
-              <label class="form-label">Coste materiales (€)</label>
-              <input type="number" name="coste_materiales" class="form-control"
+              <label class="form-label">Coste materiales interno (€)</label>
+              <input type="number" name="coste_materiales" class="form-control econ-field"
                      step="0.01" min="0"
                      value="{{ '%.2f'|format(aviso.coste_materiales) if aviso and aviso.coste_materiales is not none else '' }}"
                      placeholder="0.00">
@@ -170,6 +221,18 @@
                 {% endif %}
               </div>
             </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Estado de cobro</label>
+              <select name="cobro_estado" class="form-select">
+                {% for key, label in cobro_estados %}
+                  <option value="{{ key }}"
+                    {% if aviso and aviso.cobro_estado == key %}selected
+                    {% elif not aviso and key == 'pendiente' %}selected{% endif %}>
+                    {{ label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="col-12">
               <label class="form-label">Piezas / materiales usados</label>
               <textarea name="materiales_desc" class="form-control" rows="2"
@@ -179,7 +242,6 @@
         </div>
       </div>
     </div>
-    {% endif %}
 
     <!-- Fotos -->
     <div class="col-12">
@@ -243,18 +305,24 @@
 
 {% block scripts %}
 <script>
-// Cálculo beneficio en tiempo real
-function calcBeneficio() {
-  const precio = parseFloat(document.querySelector('[name=precio_mano_obra]')?.value) || 0;
-  const coste  = parseFloat(document.querySelector('[name=coste_materiales]')?.value) || 0;
-  const el = document.getElementById('beneficio-preview');
-  if (!el) return;
-  const ben = precio - coste;
-  el.textContent = ben.toFixed(2) + ' €';
-  el.className = 'form-control bg-light fw-bold ' + (ben >= 0 ? 'text-success' : 'text-danger');
+// Cálculo totales en tiempo real
+function calcTotales() {
+  const mano    = parseFloat(document.querySelector('[name=precio_mano_obra]')?.value) || 0;
+  const gastos  = parseFloat(document.querySelector('[name=gastos_extra]')?.value) || 0;
+  const desc    = parseFloat(document.querySelector('[name=descuento]')?.value) || 0;
+  const coste   = parseFloat(document.querySelector('[name=coste_materiales]')?.value) || 0;
+  const total   = Math.max(mano + gastos - desc, 0);
+  const benef   = total - coste;
+
+  const elTotal = document.getElementById('total-preview');
+  const elBen   = document.getElementById('beneficio-preview');
+  if (elTotal) elTotal.textContent = total.toFixed(2) + ' €';
+  if (elBen) {
+    elBen.textContent = benef.toFixed(2) + ' €';
+    elBen.className = 'form-control bg-light fw-bold ' + (benef >= 0 ? 'text-success' : 'text-danger');
+  }
 }
-document.querySelector('[name=precio_mano_obra]')?.addEventListener('input', calcBeneficio);
-document.querySelector('[name=coste_materiales]')?.addEventListener('input', calcBeneficio);
+document.querySelectorAll('.econ-field').forEach(el => el.addEventListener('input', calcTotales));
 
 // Preview de fotos antes de subir
 document.getElementById('photos-input')?.addEventListener('change', function() {

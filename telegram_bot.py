@@ -76,24 +76,14 @@ def diagnosticar() -> dict:
         return {'ok': False, 'error': str(e)}
 
 
-def enviar_mensaje(texto: str) -> bool:
-    """
-    Envía un mensaje HTML al chat configurado en .env.
-    Devuelve True si se envió correctamente, False si hubo cualquier error.
-    """
-    token, chat_id = _get_credenciales()
-
-    if not token or not chat_id or 'PON_AQUI' in token or 'PON_AQUI' in chat_id:
-        logger.warning('Telegram no configurado — revisa .env')
-        return False
-
+def _enviar_a_chat(token: str, chat_id: str, texto: str) -> bool:
+    """Envío interno a un chat_id específico."""
     url = f'https://api.telegram.org/bot{token}/sendMessage'
     datos = urllib.parse.urlencode({
         'chat_id': chat_id,
         'text': texto,
         'parse_mode': 'HTML',
     }).encode('utf-8')
-
     try:
         req = urllib.request.Request(url, data=datos, method='POST')
         with urllib.request.urlopen(req, timeout=5, context=_ssl_context()) as resp:
@@ -108,12 +98,33 @@ def enviar_mensaje(texto: str) -> bool:
         return False
 
 
+def enviar_mensaje(texto: str) -> bool:
+    """
+    Envía un mensaje HTML al chat configurado en .env (chat admin).
+    """
+    token, chat_id = _get_credenciales()
+    if not token or not chat_id or 'PON_AQUI' in token or 'PON_AQUI' in chat_id:
+        logger.warning('Telegram no configurado — revisa .env')
+        return False
+    return _enviar_a_chat(token, chat_id, texto)
+
+
+def enviar_mensaje_a(chat_id_destino: str, texto: str) -> bool:
+    """
+    Envía un mensaje HTML a un chat_id específico (ej: técnico asignado).
+    """
+    token, _ = _get_credenciales()
+    if not token or not chat_id_destino or 'PON_AQUI' in token:
+        return False
+    return _enviar_a_chat(token, chat_id_destino, texto)
+
+
 # ─────────────────────────────────────────────
 # Notificaciones de avisos
 # ─────────────────────────────────────────────
 
 def notificar_aviso_nuevo(aviso) -> bool:
-    """Notifica la creación de un aviso nuevo (desde panel o formulario público)."""
+    """Notifica la creación de un aviso nuevo. También al técnico asignado si tiene chat_id."""
     origen = '🌐 <i>vía formulario web</i>' if not aviso.created_by else '👨‍🔧 <i>vía panel</i>'
     lineas = [
         f'🔔 <b>Nuevo aviso #{aviso.id}</b>  {origen}',
@@ -130,7 +141,18 @@ def notificar_aviso_nuevo(aviso) -> bool:
     if aviso.descripcion:
         lineas.append(f'📝 {aviso.descripcion[:300]}')
 
-    return enviar_mensaje('\n'.join(lineas))
+    texto = '\n'.join(lineas)
+    ok = enviar_mensaje(texto)
+
+    # Notificar también al técnico asignado (si tiene chat_id distinto al admin)
+    if aviso.tecnico and aviso.tecnico.telegram_chat_id:
+        tg_id = aviso.tecnico.telegram_chat_id.strip()
+        _, admin_chat = _get_credenciales()
+        if tg_id and tg_id != admin_chat:
+            asignado_txt = texto + f'\n\n📌 <i>Asignado a ti: {aviso.tecnico.display_name}</i>'
+            enviar_mensaje_a(tg_id, asignado_txt)
+
+    return ok
 
 
 def notificar_cambio_estado(aviso, estado_anterior: str) -> bool:
